@@ -7,6 +7,7 @@ import os
 import time
 
 def dPrint(*args):
+    return
     print(*args)
 
 
@@ -14,6 +15,12 @@ class Pair():
     def __init__(self, x, y):
         self.x = x
         self.y = y
+
+    def get_x(self):
+        return self.x
+
+    def get_y(self):
+        return self.y
 
     def __repr__(self):
         return f'({self.x}, {self.y})'
@@ -33,26 +40,24 @@ class GameWindow(QGraphicsView):
         self.mouse_pos = QPointF(0, 0)
 
     def keyPressEvent(self, e):
-        print('key')
+        dPrint('key')
 
     def mousePressEvent(self, e):
-        print('mouse')
+        dPrint('mouse')
 
     def mouseMoveEvent(self, e):
-        self.mouse_posi = e.position()
+        self.mouse_pos = e.position()
 
 
 class Game():
+
     def __init__(self, resx=1000, resy=800, title='scratch game'):
         self.__app = QApplication([])
         self.__window = GameWindow(resx, resy, title)
         self.__window.show()
 
-    def mouse_x(self):
-        return self.__window.mouse_pos.x()
-
-    def mouse_y(self):
-        return self.__window.mouse_pos.y()
+    def mouse(self):
+        return Pair(self.__window.mouse_pos.x(), self.__window.mouse_pos.y())
 
     def loop(self):
         self.__app.exec()
@@ -62,10 +67,10 @@ class Worker(QThread):
 
     sigAddPixmap = pyqtSignal(QPixmap)
     sigSetOffset = pyqtSignal(Pair)
+    sigSetPixmap = pyqtSignal(QPixmap)
 
     def __init__(self, game, path, routine):
         super().__init__()
-
         self.x = 0
         self.y = 0
         self.angle = 0
@@ -82,19 +87,21 @@ class Worker(QThread):
     def setpos(self, x, y):
         self.x = x
         self.y = y
+        dPrint(' >> setOffset:', x, y)
         self.sigSetOffset.emit(Pair(x - self.diag / 2, y - self.diag / 2))
 
     def move(self, x, y):
         self.setpos(self._x + x, self._y + y)
 
     def setangle(self, angle):
-        self._angle = angle
+        self.angle = angle
         transform = QTransform()
-        transform.translate(self._orig.width() / 2, self._orig.height() / 2)
-        transform.rotate(self._angle)
-        transform.translate(-self._orig.width() / 2, -self._orig.height() / 2)
-        self._pixmap = self._orig.transformed(transform)
-        self._label.setPixmap(self._pixmap)
+        transform.translate(self.orig.width() / 2, self.orig.height() / 2)
+        transform.rotate(-self.angle)
+        transform.translate(-self.orig.width() / 2, -self.orig.height() / 2)
+        self.pixmap = self.orig.transformed(transform)
+        dPrint(' >> setPixmap:', self.pixmap)
+        self.sigSetPixmap.emit(self.pixmap)
 
     def right(self, angle):
         self.setangle(self._angle + angle)
@@ -102,12 +109,12 @@ class Worker(QThread):
     def left(self, angle):
         self.setangle(self._angle - angle)
 
-    def point_to(self, x, y):
-        angle = math.atan2(y - self._y, x - self._x)
+    def point_to(self, obj):
+        angle = math.atan2(obj.get_x() - self.y, obj.get_y() - self.x)
         self.setangle(angle * 180 / math.pi)
 
     def run(self):
-        #dPrint('emmiting signal: addPixmap', self.pixmap)
+        dPrint(' >> addPixmap:', self.pixmap)
         self.sigAddPixmap.emit(self.pixmap)
         self.routine()
 
@@ -115,13 +122,18 @@ class Sprite(QWidget):
 
     @pyqtSlot(QPixmap)
     def __slotAddPixmap(self, pixmap):
-        dPrint('got signal: adding pixmap', pixmap)
+        dPrint(' << addPixmap:', pixmap)
         self.__obj = self.__scene.addPixmap(pixmap)
 
     @pyqtSlot(Pair)
     def __slotSetOffset(self, coords):
-        dPrint('got signal: changing coordinates', coords)
+        dPrint(' << setOffset:', coords)
         self.__obj.setOffset(coords.x, coords.x)
+
+    @pyqtSlot(QPixmap)
+    def __slotSetPixmap(self, pixmap):
+        dPrint(' << setPixmap:', pixmap)
+        self.__obj.setPixmap(pixmap)
 
     def __init__(self, game, path):
         super().__init__()
@@ -131,10 +143,17 @@ class Sprite(QWidget):
         self.__worker = Worker(game, path, self.run)
         self.__worker.sigAddPixmap.connect(self.__slotAddPixmap)
         self.__worker.sigSetOffset.connect(self.__slotSetOffset)
+        self.__worker.sigSetPixmap.connect(self.__slotSetPixmap)
         self.__worker.start()
 
     def setpos(self, x, y):
         self.__worker.setpos(x, y)
+        time.sleep(0.01)
+
+    def point_to(self, obj):
+        print('pointing to', obj)
+        self.__worker.point_to(obj)
+        time.sleep(0.01)
 
 
 class Box(Sprite):
@@ -144,9 +163,8 @@ class Box(Sprite):
 
     def run(self):
         self.setpos(200, 200)
-        for i in range(100):
-            self.setpos(i, i)
-            time.sleep(0.05)
+        while True:
+            self.point_to(self.game.mouse())
 
 
 if __name__ == '__main__':
