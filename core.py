@@ -9,6 +9,19 @@ import time
 def dPrint(*args):
     print(*args)
 
+
+class Pair():
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    def __repr__(self):
+        return f'({self.x}, {self.y})'
+
+    def __str__(self):
+        return self.__repr__()
+
+
 class GameWindow(QGraphicsView):
     def __init__(self, resx, resy, title):
         super().__init__()
@@ -27,9 +40,6 @@ class GameWindow(QGraphicsView):
 
     def mouseMoveEvent(self, e):
         self.mouse_posi = e.position()
-
-    def sigAdd():
-        pass
 
 
 class Game():
@@ -50,30 +60,29 @@ class Game():
 
 class Worker(QThread):
 
-    sigAddPixmap = pyqtSignal(int)
+    sigAddPixmap = pyqtSignal(QPixmap)
+    sigSetOffset = pyqtSignal(Pair)
 
-    def __init__(self, game, path):
+    def __init__(self, game, path, routine):
         super().__init__()
 
         self.x = 0
         self.y = 0
         self.angle = 0
 
+        self.game = game
         self.orig = QPixmap(path)
         self.pixmap = QPixmap(path)
         self.diag = int(math.hypot(self.pixmap.width(), self.pixmap.height()))
-        dPrint('emmiting signal: addPixmap', self.pixmap)
-        #self.sigAddPixmap.emit(self.pixmap)
-        #self.setpos(0, 0)
-
+        self.routine = routine
 
     def __del__(self):
         self.wait()
 
     def setpos(self, x, y):
-        self._x = x
-        self._y = y
-        self._obj.setOffset(x - self._diag / 2, y - self._diag / 2)
+        self.x = x
+        self.y = y
+        self.sigSetOffset.emit(Pair(x - self.diag / 2, y - self.diag / 2))
 
     def move(self, x, y):
         self.setpos(self._x + x, self._y + y)
@@ -98,24 +107,34 @@ class Worker(QThread):
         self.setangle(angle * 180 / math.pi)
 
     def run(self):
-        self.sigAddPixmap.emit(123)
-        pass
+        #dPrint('emmiting signal: addPixmap', self.pixmap)
+        self.sigAddPixmap.emit(self.pixmap)
+        self.routine()
 
 class Sprite(QWidget):
 
-    @pyqtSlot(int)
+    @pyqtSlot(QPixmap)
     def __slotAddPixmap(self, pixmap):
         dPrint('got signal: adding pixmap', pixmap)
-        #self.__game.__window.scene.addPixmap(pixmap)
+        self.__obj = self.__scene.addPixmap(pixmap)
+
+    @pyqtSlot(Pair)
+    def __slotSetOffset(self, coords):
+        dPrint('got signal: changing coordinates', coords)
+        self.__obj.setOffset(coords.x, coords.x)
 
     def __init__(self, game, path):
         super().__init__()
         if not os.path.exists(path):
             raise ValueError(f'path ({path}) does not exist')
-        self.__game = game
-        self.__worker = Worker(game, path)
+        self.__scene = game._Game__window.scene
+        self.__worker = Worker(game, path, self.run)
         self.__worker.sigAddPixmap.connect(self.__slotAddPixmap)
+        self.__worker.sigSetOffset.connect(self.__slotSetOffset)
         self.__worker.start()
+
+    def setpos(self, x, y):
+        self.__worker.setpos(x, y)
 
 
 class Box(Sprite):
@@ -125,7 +144,6 @@ class Box(Sprite):
 
     def run(self):
         self.setpos(200, 200)
-        return
         for i in range(100):
             self.setpos(i, i)
             time.sleep(0.05)
