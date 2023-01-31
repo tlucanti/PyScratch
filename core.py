@@ -6,6 +6,9 @@ import math
 import os
 import time
 
+def dPrint(*args):
+    print(*args)
+
 class GameWindow(QGraphicsView):
     def __init__(self, resx, resy, title):
         super().__init__()
@@ -25,40 +28,47 @@ class GameWindow(QGraphicsView):
     def mouseMoveEvent(self, e):
         self.mouse_posi = e.position()
 
+    def sigAdd():
+        pass
+
 
 class Game():
     def __init__(self, resx=1000, resy=800, title='scratch game'):
-        self._app = QApplication([])
-        self._window = _GameWindow(resx, resy, title)
-        self._window.show()
+        self.__app = QApplication([])
+        self.__window = GameWindow(resx, resy, title)
+        self.__window.show()
 
     def mouse_x(self):
-        return self._window.mouse_pos.x()
+        return self.__window.mouse_pos.x()
 
     def mouse_y(self):
-        return self._window.mouse_pos.y()
+        return self.__window.mouse_pos.y()
 
     def loop(self):
-        self._app.exec()
+        self.__app.exec()
 
 
 class Worker(QThread):
-    def __init__(self):
 
-class Sprite(QThread):
+    sigAddPixmap = pyqtSignal(int)
+
     def __init__(self, game, path):
         super().__init__()
-        self._x = 0
-        self._y = 0
-        self._angle = 0
 
-        if not os.path.exists(path):
-            raise ValueError(f'path ({path}) does not exist')
-        self._orig = QPixmap(path)
-        self._pixmap = QPixmap(path)
-        self._diag = int(math.hypot(self._pixmap.width(), self._pixmap.height()))
-        self._obj = game._window.scene.addPixmap(self._pixmap)
-        self.setpos(0, 0)
+        self.x = 0
+        self.y = 0
+        self.angle = 0
+
+        self.orig = QPixmap(path)
+        self.pixmap = QPixmap(path)
+        self.diag = int(math.hypot(self.pixmap.width(), self.pixmap.height()))
+        dPrint('emmiting signal: addPixmap', self.pixmap)
+        #self.sigAddPixmap.emit(self.pixmap)
+        #self.setpos(0, 0)
+
+
+    def __del__(self):
+        self.wait()
 
     def setpos(self, x, y):
         self._x = x
@@ -88,7 +98,24 @@ class Sprite(QThread):
         self.setangle(angle * 180 / math.pi)
 
     def run(self):
+        self.sigAddPixmap.emit(123)
         pass
+
+class Sprite(QWidget):
+
+    @pyqtSlot(int)
+    def __slotAddPixmap(self, pixmap):
+        dPrint('got signal: adding pixmap', pixmap)
+        #self.__game.__window.scene.addPixmap(pixmap)
+
+    def __init__(self, game, path):
+        super().__init__()
+        if not os.path.exists(path):
+            raise ValueError(f'path ({path}) does not exist')
+        self.__game = game
+        self.__worker = Worker(game, path)
+        self.__worker.sigAddPixmap.connect(self.__slotAddPixmap)
+        self.__worker.start()
 
 
 class Box(Sprite):
@@ -108,7 +135,6 @@ if __name__ == '__main__':
     g = Game()
 
     b1 = Box(g)
-    b1.start()
     #b1 = Box(g)
     #b2 = Box(g)
 
