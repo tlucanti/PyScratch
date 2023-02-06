@@ -88,20 +88,36 @@ class Worker(QThread):
         self.x = x
         self.y = y
         dPrint(' >> setOffset:', x, y)
-        self.sigSetOffset.emit(Pair(x - self.diag / 2, y - self.diag / 2))
+        self.sigSetOffset.emit(Pair(
+            x - self.pixmap.width() / 2,
+            y - self.pixmap.height() / 2))
 
     def move(self, x, y):
-        self.setpos(self._x + x, self._y + y)
+        self.setpos(self.x + x, self.y + y)
 
-    def setangle(self, angle):
-        self.angle = angle
+    def setangle(self, deg, rad):
+        self.angle = deg
         transform = QTransform()
-        transform.translate(self.orig.width() / 2, self.orig.height() / 2)
-        transform.rotate(-self.angle)
-        transform.translate(-self.orig.width() / 2, -self.orig.height() / 2)
+        transform.rotate(-self.angle + 90)
         self.pixmap = self.orig.transformed(transform)
         dPrint(' >> setPixmap:', self.pixmap)
         self.sigSetPixmap.emit(self.pixmap)
+
+        w = self.pixmap.width()
+        h = self.pixmap.height()
+        cos = abs(math.cos(rad))
+        sin = abs(math.sin(rad))
+
+        Width = w * cos + h * sin
+        Height = w * sin + h * cos
+
+        dw = w - Width
+        dh = h - Height
+
+        self.sigSetOffset.emit(Pair(
+            self.x + dw / 2,
+            self.y + dh / 2
+            ))
 
     def right(self, angle):
         self.setangle(self._angle + angle)
@@ -111,7 +127,7 @@ class Worker(QThread):
 
     def point_to(self, obj):
         angle = math.atan2(obj.get_x() - self.y, obj.get_y() - self.x)
-        self.setangle(angle * 180 / math.pi)
+        self.setangle(angle * 180 / math.pi, angle)
 
     def run(self):
         dPrint(' >> addPixmap:', self.pixmap)
@@ -155,6 +171,9 @@ class Sprite(QWidget):
         self.__worker.point_to(obj)
         time.sleep(0.01)
 
+    def run():
+        pass
+
 
 class Box(Sprite):
     def __init__(self, game):
@@ -167,10 +186,20 @@ class Box(Sprite):
             self.point_to(self.game.mouse())
 
 
+class Box2(Sprite):
+    def __init__(self, game):
+        self.game = game
+        super().__init__(game, 'images/sprite2.png')
+
+    def run(self):
+        self.setpos(200, 200)
+
+
 if __name__ == '__main__':
     g = Game()
 
     b1 = Box(g)
+    b2 = Box2(g)
     #b1 = Box(g)
     #b2 = Box(g)
 
