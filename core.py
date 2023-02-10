@@ -66,7 +66,8 @@ class Game():
 class Worker(QThread):
 
     sigAddPixmap = pyqtSignal(QPixmap)
-    sigSetOffset = pyqtSignal(Pair)
+    sigSetPos = pyqtSignal(Pair)
+    sigSetRotation = pyqtSignal(int)
     sigSetPixmap = pyqtSignal(QPixmap)
 
     def __init__(self, game, path, routine):
@@ -87,47 +88,26 @@ class Worker(QThread):
     def setpos(self, x, y):
         self.x = x
         self.y = y
-        dPrint(' >> setOffset:', x, y)
-        self.sigSetOffset.emit(Pair(
-            x - self.pixmap.width() / 2,
-            y - self.pixmap.height() / 2))
+        dPrint(' >> setPos:', x, y)
+        self.sigSetPos.emit(Pair(
+            x - self.pixmap.width() // 2,
+            y - self.pixmap.height() // 2))
 
     def move(self, x, y):
         self.setpos(self.x + x, self.y + y)
 
-    def setangle(self, deg, rad):
-        self.angle = deg
-        transform = QTransform()
-        transform.rotate(-self.angle + 90)
-        self.pixmap = self.orig.transformed(transform)
-        dPrint(' >> setPixmap:', self.pixmap)
-        self.sigSetPixmap.emit(self.pixmap)
-
-        w = self.pixmap.width()
-        h = self.pixmap.height()
-        cos = abs(math.cos(rad))
-        sin = abs(math.sin(rad))
-
-        Width = w * cos + h * sin
-        Height = w * sin + h * cos
-
-        dw = w - Width
-        dh = h - Height
-
-        self.sigSetOffset.emit(Pair(
-            self.x + dw / 2,
-            self.y + dh / 2
-            ))
+    def setrotation(self, deg):
+        self.sigSetRotation.emit(deg)
 
     def right(self, angle):
-        self.setangle(self._angle + angle)
+        self.setrotation(self._angle + angle)
 
     def left(self, angle):
-        self.setangle(self._angle - angle)
+        self.setrotation(self._angle - angle)
 
     def point_to(self, obj):
         angle = math.atan2(obj.get_x() - self.y, obj.get_y() - self.x)
-        self.setangle(angle * 180 / math.pi, angle)
+        self.setrotation(round(angle * 180 / math.pi) - 90)
 
     def run(self):
         dPrint(' >> addPixmap:', self.pixmap)
@@ -140,11 +120,18 @@ class Sprite(QWidget):
     def __slotAddPixmap(self, pixmap):
         dPrint(' << addPixmap:', pixmap)
         self.__obj = self.__scene.addPixmap(pixmap)
+        center = self.__obj.boundingRect().center()
+        self.__obj.setTransformOriginPoint(center)
 
     @pyqtSlot(Pair)
-    def __slotSetOffset(self, coords):
+    def __slotSetPos(self, coords):
         dPrint(' << setOffset:', coords)
-        self.__obj.setOffset(coords.x, coords.x)
+        self.__obj.setPos(coords.x, coords.y)
+
+    @pyqtSlot(int)
+    def __slotSetRotation(self, angle):
+        dPrint(' << setRotation:', angle)
+        self.__obj.setRotation(-angle)
 
     @pyqtSlot(QPixmap)
     def __slotSetPixmap(self, pixmap):
@@ -156,20 +143,28 @@ class Sprite(QWidget):
         if not os.path.exists(path):
             raise ValueError(f'path ({path}) does not exist')
         self.__scene = game._Game__window.scene
+
         self.__worker = Worker(game, path, self.run)
         self.__worker.sigAddPixmap.connect(self.__slotAddPixmap)
-        self.__worker.sigSetOffset.connect(self.__slotSetOffset)
+        self.__worker.sigSetPos.connect(self.__slotSetPos)
+        self.__worker.sigSetRotation.connect(self.__slotSetRotation)
         self.__worker.sigSetPixmap.connect(self.__slotSetPixmap)
         self.__worker.start()
 
-    def setpos(self, x, y):
-        self.__worker.setpos(x, y)
+    def __delay(self):
         time.sleep(0.01)
 
+    def setpos(self, x, y):
+        self.__worker.setpos(x, y)
+        self.__delay()
+
+    def setrotation(self, angle):
+        self.__worker.setrotation(angle)
+        self.__delay()
+
     def point_to(self, obj):
-        print('pointing to', obj)
         self.__worker.point_to(obj)
-        time.sleep(0.01)
+        self.__delay()
 
     def run():
         pass
@@ -192,7 +187,10 @@ class Box2(Sprite):
         super().__init__(game, 'images/sprite2.png')
 
     def run(self):
-        self.setpos(200, 200)
+        self.setpos(100, 100)
+        for i in range(360):
+            self.setrotation(i)
+            time.sleep(0.01)
 
 
 if __name__ == '__main__':
