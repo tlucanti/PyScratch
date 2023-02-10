@@ -7,7 +7,6 @@ import os
 import time
 
 def dPrint(*args):
-    return
     print(*args)
 
 
@@ -79,7 +78,6 @@ class Worker(QThread):
         self.game = game
         self.orig = QPixmap(path)
         self.pixmap = QPixmap(path)
-        self.diag = int(math.hypot(self.pixmap.width(), self.pixmap.height()))
         self.routine = routine
 
     def __del__(self):
@@ -143,13 +141,15 @@ class Sprite(QWidget):
         if not os.path.exists(path):
             raise ValueError(f'path ({path}) does not exist')
         self.__scene = game._Game__window.scene
-
         self.__worker = Worker(game, path, self.run)
         self.__worker.sigAddPixmap.connect(self.__slotAddPixmap)
         self.__worker.sigSetPos.connect(self.__slotSetPos)
         self.__worker.sigSetRotation.connect(self.__slotSetRotation)
         self.__worker.sigSetPixmap.connect(self.__slotSetPixmap)
         self.__worker.start()
+        if type(self) == Sprite:
+            self.__slotAddPixmap(QPixmap(path))
+
 
     def __delay(self):
         time.sleep(0.01)
@@ -166,7 +166,7 @@ class Sprite(QWidget):
         self.__worker.point_to(obj)
         self.__delay()
 
-    def run():
+    def run(self):
         pass
 
 
@@ -187,17 +187,17 @@ class Box2(Sprite):
         super().__init__(game, 'images/sprite2.png')
 
     def run(self):
-        self.setpos(100, 100)
-        for i in range(360):
-            self.setrotation(i)
-            time.sleep(0.01)
+        self.setpos(self.game.mouse_)
 
 
 if __name__ == '__main__':
     g = Game()
 
-    b1 = Box(g)
-    b2 = Box2(g)
+    #b1 = Box(g)
+    #b2 = Box2(g)
+
+    b = Sprite(g, 'images/sprite2.png')
+    b.setpos(100, 100)
     #b1 = Box(g)
     #b2 = Box(g)
 
