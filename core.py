@@ -5,6 +5,8 @@ from PyQt6.QtGui import *
 import math
 import os as _Os_module
 import time as _Time_module
+from queue import Queue
+import threading
 
 def dPrint(*args):
     print(*args)
@@ -36,20 +38,34 @@ class GameWindow(QGraphicsView):
         self.scene.setSceneRect(2, 2, resx - 2, resy - 2)
         self.setScene(self.scene)
         self.setMouseTracking(True)
-        self.mouse_pos = QPointF(0, 0)
+        self.mouse_pos = QPoint(0, 0)
+        self.rpc_queue = Queue()
 
-    def keyPressEvent(self, event):
-        dPrint('key')
+        self.timer = QTimer()
+        self.time = QTime(0, 0, 0)
+        self.timer.timeout.connect(self.timerEvent)
+        self.timer.start()
 
-    def mousePressEvent(self, event):
-        dPrint('mouse')
+    #def keyPressEvent(self, event):
+    #    dPrint('key')
+
+    #def mousePressEvent(self, event):
+    #    dPrint('mouse')
+
+    def timerEvent(self):
+        if self.rpc_queue.empty():
+            return
+        rpc_call = self.rpc_queue.get()
+        rpc_call.call(*rpc_call.args)
+        s = self.rpc_queue.qsize()
+        if s != 0:
+            print('queue size', self.rpc_queue.qsize())
 
     def mouseMoveEvent(self, event):
         self.mouse_pos = event.position()
 
 
 class GameBase():
-
     def __init__(self, resx, resy, title):
         self.__app = QApplication([])
         self.__window = GameWindow(resx, resy, title)
@@ -97,16 +113,19 @@ class Game(GameBase):
         return self._GameBase__method_loop()
 
 
+class RPCcall():
+    def __init__(self, call, *args):
+        self.call = call
+        self.args = args
+
+
 class Worker(QThread):
-
-    sig_set_pixmap = pyqtSignal(QPixmap)
-    sig_set_pos = pyqtSignal(Pair)
-    sig_set_rotation = pyqtSignal(int)
-
-    def __init__(self, pixmap, routine, args, kwargs):
+    def __init__(self, obj, pixmap, routine, args, kwargs):
         self.x = 0
         self.y = 0
         self.angle = 0
+        self.rpc_queue = args[0]._GameBase__window.rpc_queue
+        self.obj = obj
 
         self.orig = pixmap
         self.pixmap = pixmap.copy()
@@ -115,18 +134,24 @@ class Worker(QThread):
         self.kwargs = kwargs
         super().__init__()
 
+    def rpc_set_pos(self, x, y):
+        self.rpc_queue.put(RPCcall(self.obj.setPos, x, y))
+
+    def rpc_set_rotation(self, angle):
+        self.rpc_queue.put(RPCcall(self. obj.setRotation, angle))
+
     def setpos(self, x, y):
         self.x = x
         self.y = y
-        self.sig_set_pos.emit(Pair(x - self.pixmap.width() // 2,
-                                   y - self.pixmap.height() // 2))
+        self.rpc_set_pos(x - self.pixmap.width() // 2,
+                        y - self.pixmap.height() // 2)
 
     def move(self, x, y):
         self.setpos(self.x + x, self.y + y)
 
     def setrotation(self, angle):
         self.angle = angle
-        self.sig_set_rotation.emit(-angle)
+        self.rpc_set_rotation(-angle)
 
     def right(self, angle):
         self.setrotation(self.angle + angle)
@@ -144,20 +169,7 @@ class Worker(QThread):
 
 class SpriteBase(QWidget):
 
-    @pyqtSlot(Pair)
-    def __slot_set_pos(self, coords):
-        self.__obj.setPos(coords.x, coords.y)
-
-    @pyqtSlot(int)
-    def __slot_set_rotation(self, angle):
-        self.__obj.setRotation(angle)
-
-    @pyqtSlot(QPixmap)
-    def __slot_set_pixmap(self, pixmap):
-        self.__obj.setPixmap(pixmap)
-
     def __init__(self, path, args, kwargs, is_clone=False):
-        print('called init')
         super().__init__()
         if not _Os_module.path.exists(path):
             raise ValueError(f'path ({path}) does not exist')
@@ -175,10 +187,7 @@ class SpriteBase(QWidget):
 
         conn_type = Qt.ConnectionType.BlockingQueuedConnection
         self.__path = path
-        self.__worker = Worker(pixmap, routine, args, kwargs)
-        self.__worker.sig_set_pos.connect(self.__slot_set_pos, conn_type)
-        self.__worker.sig_set_rotation.connect(self.__slot_set_rotation, conn_type)
-        self.__worker.sig_set_pixmap.connect(self.__slot_set_pixmap, conn_type)
+        self.__worker = Worker(self.__obj, pixmap, routine, args, kwargs)
         self.__worker.start()
 
     def __str__(self):
@@ -188,7 +197,7 @@ class SpriteBase(QWidget):
         return f'{n}(x={x}, y={y})'
 
     def __internal_delay(self):
-        _Time_module.sleep(0.01)
+        _Time_module.sleep(1 / 60)
 
     def __method_setpos(self, x, y):
         self.__worker.setpos(x, y)
@@ -217,12 +226,13 @@ class SpriteBase(QWidget):
         return self.__worker.y
 
     def __method_clone(self, args, kwargs):
-        print(sprite(self.__path, True)(type(self))(*args))
-        #clone = type(self).__new__(type(self))
-        #SpriteBase.__init__(clone, self.__path, args, kwargs, is_clone=True)
+        #print(sprite(self.__path, True)(type(self))(*args))
+        clone = type(self).__new__(type(self))
+        SpriteBase.__init__(clone, self.__path, args, kwargs, is_clone=True)
 
     def __method_sleep(self, period):
-        _Time_module.sleep(period)
+        pass
+        #_Time_module.sleep(period)
 
 
 class Sprite(SpriteBase):
@@ -306,7 +316,7 @@ def sprite(path, __clone=False):
 
 
 @sprite('images/sprite.png')
-class Box(Sprite):
+class Box1(Sprite):
     def run(self, game):
         self.setpos(200, 200)
         while True:
@@ -317,23 +327,19 @@ class Box(Sprite):
 class Box2(Sprite):
     def run(self, game):
 
-        #c = self.clone(game, 'qwe')
+        c = self.clone(game, 100, 100)
         while True:
             self.setpos(game.mouse_x(), game.mouse_y())
 
-    def as_clone(self, game, arg):
-        self.setpos(100, 100)
+    def as_clone(self, game, x, y):
+        self.setpos(x, y)
 
 
 if __name__ == '__main__':
     g = Game()
 
-    b1 = Box(g)
     b2 = Box2(g)
-    #b2 = Box2(g)
-
-    #b1 = Box(g)
-    #b2 = Box(g)
+    b1 = Box1(g)
 
     g.loop()
 
