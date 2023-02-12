@@ -4,8 +4,8 @@ from PyQt6.QtWidgets import *
 from PyQt6.QtGui import *
 import math
 import os as _os_module
+import queue as _queue_module
 import time
-from queue import Queue
 import threading
 
 def dPrint(*args):
@@ -39,7 +39,7 @@ class GameWindow(QGraphicsView):
         self.setScene(self.scene)
         self.setMouseTracking(True)
         self.mouse_pos = QPoint(0, 0)
-        self.rpc_queue = Queue()
+        self.rpc_queue = _queue_module.Queue(maxsize=10)
 
         self.timer = QTimer()
         self.time = QTime(0, 0, 0)
@@ -55,11 +55,8 @@ class GameWindow(QGraphicsView):
     def timerEvent(self):
         if self.rpc_queue.empty():
             return
-        rpc_call = self.rpc_queue.get()
+        rpc_call = self.rpc_queue.get_nowait()
         rpc_call.call(*rpc_call.args)
-        s = self.rpc_queue.qsize()
-        if s > 10:
-            print('queue size', self.rpc_queue.qsize())
 
     def mouseMoveEvent(self, event):
         self.mouse_pos = event.position()
@@ -121,12 +118,12 @@ class Worker(QThread):
         self.pos_x = 0
         self.pos_y = 0
         self.angle = 0
+        self.scale = 1.0
+
         game = args[0]
         self.rpc_queue = game._Game__internal_obj_ref.window.rpc_queue
         self.obj = obj
-
-        self.orig = pixmap
-        self.pixmap = pixmap.copy()
+        self.pixmap = pixmap
         self.routine = routine
         self.args = args
         self.kwargs = kwargs
@@ -139,7 +136,10 @@ class Worker(QThread):
         self.rpc_queue.put(RPCcall(self.obj.setPos, x, y))
 
     def rpc_set_rotation(self, angle):
-        self.rpc_queue.put(RPCcall(self. obj.setRotation, angle))
+        self.rpc_queue.put(RPCcall(self.obj.setRotation, angle))
+
+    def rpc_set_scale(self, scale):
+        self.rpc_queue.put(RPCcall(self.obj.setScale, scale))
 
     def set_pos(self, x, y):
         self.pos_x = x
@@ -161,8 +161,23 @@ class Worker(QThread):
         self.set_rotation(self.angle - angle)
 
     def point_to(self, obj):
-        angle = math.atan2(obj.get_x() - self.pos_y, obj.get_y() - self.pos_x)
+        angle = math.atan2(obj.get_x() - self.pos_x, obj.get_y() - self.pos_y)
         self.set_rotation(round(angle * 180 / math.pi) - 90)
+
+    def set_scale(self, scale):
+        if scale < 0:
+            raise ValueError(f'cannot set scale to negative value ({scale})')
+        self.scale = scale
+        self.rpc_set_scale(scale)
+
+    def resize(self, size):
+        if size < 0:
+            raise ValueError(f'cannot set size to negative value ({size})')
+        self.scale *= size
+        self.rpc_set_scale(self.scale)
+
+    def get_scale(self):
+        return self.scale
 
     def run(self):
         self.routine(*self.args, **self.kwargs)
@@ -192,7 +207,6 @@ class SpriteBase(QWidget):
         return f'{n}(x={x}, y={y})'
 
     def clone(self, parent, clone_args, clone_kwargs):
-        #print(sprite(self.__path, True)(type(self))(*args))
         if len(clone_args) == 0 or type(clone_args[0]) != Game:
             raise TypeError('expected (Game) for first argument of clone method')
 
@@ -287,6 +301,26 @@ class Sprite():
         """
         return self.__internal_obj_ref.worker.angle
 
+    @rpc_method
+    def set_scale(self, scale):
+        """
+        set sprite (scale) relative to the original (scale)
+        """
+        self.__internal_obj_ref.worker.set_scale(scale)
+
+    @rpc_method
+    def resize(self, size):
+        """
+        change sprite(scale) relative to the current (scale)
+        """
+        self.__internal_obj_ref.worker.resize(size)
+
+    def get_scale(self):
+        """
+        returns sprites (scale)
+        """
+        return self.__internal_obj_ref.worker.scale
+
     def run(self):
         """
         function called when sprite is created
@@ -311,24 +345,21 @@ class Sprite():
 class Box1(Sprite):
     def run(self, game):
         self.set_pos(200, 200)
-        clone = self.clone(game)
-        while True:
-            self.point_to(game.mouse())
+        for x in range(1, 20):
+            for y in range(1, 20):
+                c = self.clone(game)
+                c.set_pos(x * 50, y * 50)
 
     def as_clone(self, game):
         print('b1 clone')
-        self.set_pos(800, 800)
         while True:
             self.point_to(b2)
 
 
 @sprite('images/sprite2.png')
 class Box2(Sprite):
-    def run(self, game):
-        c = self.clone(game)
-        print(c)
-        c.set_pos(100, 100)
-        self.set_pos(200, 200)
+    def run(self, game, x, y):
+        self.set_pos(x, y)
         while True:
             self.set_pos(game.mouse_x(), game.mouse_y())
 
@@ -339,7 +370,7 @@ class Box2(Sprite):
 if __name__ == '__main__':
     g = Game()
 
-    b2 = Box2(g)
+    b2 = Box2(g, 100, 900)
     b1 = Box1(g)
 
 
