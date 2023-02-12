@@ -198,6 +198,15 @@ class Worker(QThread):
     def show(self):
         self.rpc_set_pixmap(self.pixmap)
 
+    def collide(self, other):
+        vert_collide = \
+            self.pos_y <= other.get_y() <= self.pos_y + self.pixmap.height() or \
+            other.get_y() <= self.pos_y <= other.get_y() + other.get_height()
+        hor_collide = \
+            self.pos_x <= other.get_x() <= self.pos_x + self.pixmap.width() or \
+            other.get_x() <= self.pos_x <= other.get_x() + other.get_width()
+        return vert_collide and hor_collide
+
     def run(self):
         self.routine(*self.args, **self.kwargs)
 
@@ -314,6 +323,18 @@ class Sprite():
         """
         return self.__internal_obj_ref.worker.pos_y
 
+    def get_width(self):
+        """
+        returns sprites (width)
+        """
+        return self.__internal_obj_ref.worker.pixmap.width()
+
+    def get_height(self):
+        """
+        returns sprites (height)
+        """
+        return self.__internal_obj_ref.worker.pixmap.height()
+
     def get_angle(self):
         """
         return (angle) value in degrees
@@ -361,6 +382,12 @@ class Sprite():
         """
         self.__internal_obj_ref.worker.show()
 
+    def collide(self, other):
+        """
+        check collision between sprites
+        """
+        return self.__internal_obj_ref.worker.collide(other)
+
     def run(self):
         """
         function called when sprite is created
@@ -381,8 +408,8 @@ class Sprite():
         pass
 
 
-@sprite('images/sprite.png')
-class Box1(Sprite):
+@sprite('images/sprite_blue.png')
+class BoxArray(Sprite):
     def run(self, game):
         self.hide()
         self.set_pos(200, 200)
@@ -390,11 +417,12 @@ class Box1(Sprite):
         for x in range(1, 10):
             for y in range(1, 10):
                 c = self.clone(game)
-                c.set_pos(x * 100, y * 100)
+                c.set_pos(x * 50, y * 50)
+                c.resize(0.5)
                 clones.append(c)
 
         for c in clones:
-            c.set_sprite('images/sprite2.png')
+            c.set_sprite('images/sprite_yellow.png')
 
         for c in clones:
             c.hide()
@@ -407,11 +435,20 @@ class Box1(Sprite):
         while True:
             self.point_to(b2)
 
-
-@sprite('images/sprite2.png')
-class Box2(Sprite):
+@sprite('images/sprite_green.png')
+class BoxCollide(Sprite):
     def run(self, game, x, y):
         self.set_pos(x, y)
+        #self.set_rotation(45)
+        while True:
+            if self.collide(b2):
+                self.set_sprite('images/sprite_red.png')
+            else:
+                self.set_sprite('images/sprite_green.png')
+
+@sprite('images/sprite_yellow.png')
+class Box2(Sprite):
+    def run(self, game):
         while True:
             self.set_pos(game.mouse_x(), game.mouse_y())
 
@@ -420,11 +457,13 @@ class Box2(Sprite):
 
 
 if __name__ == '__main__':
-    g = Game()
+    game = Game()
 
-    b2 = Box2(g, 100, 900)
-    b1 = Box1(g)
+    a = BoxArray(game)
+
+    bc = BoxCollide(game, 700, 700)
+    b2 = Box2(game)
 
 
-    g.loop()
+    game.loop()
 
