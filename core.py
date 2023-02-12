@@ -3,9 +3,8 @@ from PyQt6.QtCore import *
 from PyQt6.QtWidgets import *
 from PyQt6.QtGui import *
 import math
-import os
-import time
-from abc import abstractmethod
+import os as _Os_module
+import time as _Time_module
 
 def dPrint(*args):
     print(*args)
@@ -157,22 +156,29 @@ class SpriteBase(QWidget):
     def __slot_set_pixmap(self, pixmap):
         self.__obj.setPixmap(pixmap)
 
-    def __init__(self, path, args, kwargs):
+    def __init__(self, path, args, kwargs, is_clone=False):
+        print('called init')
         super().__init__()
-        if not os.path.exists(path):
+        if not _Os_module.path.exists(path):
             raise ValueError(f'path ({path}) does not exist')
-        game = args[0]
-        self.__scene = game._GameBase__window.scene
+        self.__game = args[0]
+        self.__scene = self.__game._GameBase__window.scene
 
         pixmap = QPixmap(path)
         self.__obj = self.__scene.addPixmap(pixmap)
         center = self.__obj.boundingRect().center()
         self.__obj.setTransformOriginPoint(center)
+        if is_clone:
+            routine = self.as_clone
+        else:
+            routine = self.run
 
-        self.__worker = Worker(pixmap, self.run, args, kwargs)
-        self.__worker.sig_set_pos.connect(self.__slot_set_pos)
-        self.__worker.sig_set_rotation.connect(self.__slot_set_rotation)
-        self.__worker.sig_set_pixmap.connect(self.__slot_set_pixmap)
+        conn_type = Qt.ConnectionType.BlockingQueuedConnection
+        self.__path = path
+        self.__worker = Worker(pixmap, routine, args, kwargs)
+        self.__worker.sig_set_pos.connect(self.__slot_set_pos, conn_type)
+        self.__worker.sig_set_rotation.connect(self.__slot_set_rotation, conn_type)
+        self.__worker.sig_set_pixmap.connect(self.__slot_set_pixmap, conn_type)
         self.__worker.start()
 
     def __str__(self):
@@ -182,7 +188,7 @@ class SpriteBase(QWidget):
         return f'{n}(x={x}, y={y})'
 
     def __internal_delay(self):
-        time.sleep(0.01)
+        _Time_module.sleep(0.01)
 
     def __method_setpos(self, x, y):
         self.__worker.setpos(x, y)
@@ -210,8 +216,13 @@ class SpriteBase(QWidget):
     def __method_get_y(self):
         return self.__worker.y
 
-    def __method_clone(self, args):
-        pass
+    def __method_clone(self, args, kwargs):
+        print(sprite(self.__path, True)(type(self))(*args))
+        #clone = type(self).__new__(type(self))
+        #SpriteBase.__init__(clone, self.__path, args, kwargs, is_clone=True)
+
+    def __method_sleep(self, period):
+        _Time_module.sleep(period)
 
 
 class Sprite(SpriteBase):
@@ -266,25 +277,28 @@ class Sprite(SpriteBase):
         """
         pass
 
-    def clone(self, *args):
+    def clone(self, *args, **kwargs):
         """
-        create sprite clone
+        create and return sprite clone
         """
-        self._SpriteBase__method_clone(args)
+        return self._SpriteBase__method_clone(args, kwargs)
 
-    def as_clone(self, *args):
+    def as_clone(self, *args, **kwargs):
         """
         function called when sprite is cloned
         """
         pass
 
+    def sleep(self, interval):
+        self._SpriteBase__method_sleep(interval)
 
-def sprite(path):
+
+def sprite(path, __clone=False):
     def sprite_wrapper(original_class):
         def new_init(self, *args, **kwargs):
             if len(args) == 0 or type(args[0]) != Game:
                 raise TypeError('expected (Game) for first argument')
-            Sprite.__init__(self, path, args, kwargs)
+            Sprite.__init__(self, path, args, kwargs, __clone)
 
         original_class.__init__ = new_init
         return original_class
@@ -301,17 +315,22 @@ class Box(Sprite):
 
 @sprite('images/sprite2.png')
 class Box2(Sprite):
-    def run(self, game, arg):
-        print(arg)
+    def run(self, game):
+
+        #c = self.clone(game, 'qwe')
         while True:
             self.setpos(game.mouse_x(), game.mouse_y())
+
+    def as_clone(self, game, arg):
+        self.setpos(100, 100)
 
 
 if __name__ == '__main__':
     g = Game()
 
     b1 = Box(g)
-    b2 = Box2(g, 'lol')
+    b2 = Box2(g)
+    #b2 = Box2(g)
 
     #b1 = Box(g)
     #b2 = Box(g)
