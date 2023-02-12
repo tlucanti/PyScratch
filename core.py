@@ -39,12 +39,12 @@ class GameWindow(QGraphicsView):
         self.setScene(self.scene)
         self.setMouseTracking(True)
         self.mouse_pos = QPoint(0, 0)
-        self.rpc_queue = _queue_module.Queue(maxsize=10)
+        self.rpc_queue = _queue_module.Queue(maxsize=1024)
 
         self.timer = QTimer()
         self.time = QTime(0, 0, 0)
         self.timer.timeout.connect(self.timerEvent)
-        self.timer.start()
+        self.timer.start(10)
 
     #def keyPressEvent(self, event):
     #    dPrint('key')
@@ -55,8 +55,10 @@ class GameWindow(QGraphicsView):
     def timerEvent(self):
         if self.rpc_queue.empty():
             return
-        rpc_call = self.rpc_queue.get_nowait()
-        rpc_call.call(*rpc_call.args)
+        s = self.rpc_queue.qsize()
+        for i in range(s):
+            rpc_call = self.rpc_queue.get_nowait()
+            rpc_call.call(*rpc_call.args)
 
     def mouseMoveEvent(self, event):
         self.mouse_pos = event.position()
@@ -132,6 +134,9 @@ class Worker(QThread):
     def __del__(self):
         self.wait()
 
+    def rpc_set_pixmap(self, pixmap):
+        self.rpc_queue.put(RPCcall(self.obj.setPixmap, pixmap))
+
     def rpc_set_pos(self, x, y):
         self.rpc_queue.put(RPCcall(self.obj.setPos, x, y))
 
@@ -179,6 +184,20 @@ class Worker(QThread):
     def get_scale(self):
         return self.scale
 
+    def set_sprite(self, path):
+        if not _os_module.path.exists(path):
+            raise ValueError(f'path ({path}) does not exist')
+        self.pixmap = QPixmap(path)
+        self.rpc_set_pixmap(self.pixmap)
+        self.rpc_set_rotation(self.angle)
+        self.rpc_set_scale(self.scale)
+
+    def hide(self):
+        self.rpc_set_pixmap(QPixmap())
+
+    def show(self):
+        self.rpc_set_pixmap(self.pixmap)
+
     def run(self):
         self.routine(*self.args, **self.kwargs)
 
@@ -187,8 +206,6 @@ class SpriteBase(QWidget):
 
     def __init__(self, routine, path, worker_args, worker_kwargs):
         super().__init__()
-        if not _os_module.path.exists(path):
-            raise ValueError(f'path ({path}) does not exist')
 
         pixmap = QPixmap(path)
         game = worker_args[0]
@@ -222,6 +239,8 @@ def sprite(path):
                 raise TypeError('expected (Game) for first argument')
             Sprite.__init__(self, self.run, path, args, kwargs)
 
+        if not _os_module.path.exists(path):
+            raise ValueError(f'path ({path}) does not exist')
         original_class.__init__ = new_init
         return original_class
     return sprite_wrapper
@@ -229,7 +248,7 @@ def sprite(path):
 def rpc_method(function):
     def wrapper(*args, **kwargs):
         retval = function(*args, **kwargs)
-        time.sleep(0.01)
+        time.sleep(0.001)
         return retval
     return wrapper
 
@@ -321,6 +340,27 @@ class Sprite():
         """
         return self.__internal_obj_ref.worker.scale
 
+    @rpc_method
+    def set_sprite(self, path):
+        """
+        set sprite image to new one
+        """
+        self.__internal_obj_ref.worker.set_sprite(path)
+
+    @rpc_method
+    def hide(self):
+        """
+        hide sprite
+        """
+        self.__internal_obj_ref.worker.hide()
+
+    @rpc_method
+    def show(self):
+        """
+        show sprite
+        """
+        self.__internal_obj_ref.worker.show()
+
     def run(self):
         """
         function called when sprite is created
@@ -344,11 +384,23 @@ class Sprite():
 @sprite('images/sprite.png')
 class Box1(Sprite):
     def run(self, game):
+        self.hide()
         self.set_pos(200, 200)
-        for x in range(1, 20):
-            for y in range(1, 20):
+        clones = []
+        for x in range(1, 10):
+            for y in range(1, 10):
                 c = self.clone(game)
-                c.set_pos(x * 50, y * 50)
+                c.set_pos(x * 100, y * 100)
+                clones.append(c)
+
+        for c in clones:
+            c.set_sprite('images/sprite2.png')
+
+        for c in clones:
+            c.hide()
+
+        for c in clones:
+            c.show()
 
     def as_clone(self, game):
         print('b1 clone')
